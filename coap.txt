@@ -1,0 +1,95 @@
+===============
+
+http://scriptogr.am/mhausenblas/post/coap-and-the-rest
+
+    CoAP supposed to run over UDP, whereas HTTP typically over TCP.
+    Because CoAP runs over UDP, some of the TCP functionality has been (had to 
+be ?) replicated directly in CoAP. For example, CoAP distinguishes between 
+confirmable (require an acknowledgement) and non-confirmable messages.
+    Requests and responses are exchanged asynchronously over CoAP messages 
+(unlike HTTP where a previously established connection is used).
+    To cut down on overhead, all the headers, methods and status codes are 
+binary encoded (see below).
+    Unlike HTTP, the cacheability of CoAP responses does not depend on the 
+request method, but the Response Code.
+
+===============
+
+http://tools.ietf.org/html/draft-kovatsch-lwig-class1-coap-00
+
+ The Constrained Application Protocol (CoAP) is designed for resource-
+   constrained nodes and networks, e.g., sensor nodes in low-power lossy
+   networks (LLNs).  Still, to implement this Internet protocol on Class
+   1 devices, i.e., ~10KiB of RAM and ~100KiB of ROM, light-weight
+   implementation techniques are necessary.
+
+
+             +--------------------+--------------------------+
+             | Layer              | Protocol                 |
+             +--------------------+--------------------------+
+             | Application        | CoAP                     |
+             | Transport          | UDP                      |
+             | Network            | IPv6 / RPL               |
+             | Adaptation         | 6LoWPAN                  |
+             | MAC                | CSMA / link-layer bursts |
+             | Radio Duty Cycling | ContikiMAC               |
+             | Physical           | IEEE 802.15.4            |
+             +--------------------+--------------------------+
+            A typical stack configuration for Class 1 devices.
+
+2.1. Memory Management
+
+
+   For embedded systems, it is common practice to allocate memory
+   statically to ensure stable behavior, as no memory management unit
+   (MMU) or other abstractions are available.  For a CoAP node, the two
+   key parameters are the number of (re)transmission buffers and the
+   maximum message size that must be supported by each buffer.
+2.2. Message Buffers
+When a
+   CoAP server only sends piggy-backed or non-confirmable responses, no
+   additional buffer is required in the application layer.
+
+Empty ACKs and RST messages can promptly be assembled and sent using
+   the IP buffer.  The first few bytes are usually parsed into the local
+   data structure and can be overwritten without harm.
+
+
+
+2.3. Retransmissions
+
+
+   CoAP's reliable transmissions require the before-mentioned
+   retransmission buffers.  For clients, obviously the request has to be
+   stored, preferably already serialized.  For servers, retransmissions
+   apply for confirmable separate responses and confirmable
+   notifications [I-D.ietf-core-observe].  As separate responses stem
+   from long-lasting resource handlers, the response should be stored
+   for retransmission instead of re-dispatching a stored request (which
+   would allow for updating the representation).  For confirmable
+   notifications, please see Section 2.6, as simply storing the response
+   can break the concept of eventual consistency.
+
+   String payloads such as JSON require a buffer to print to.  By
+   splitting the retransmission buffer into header and payload part, it
+   can be reused.  First to generate the payload and then storing the
+   CoAP message by serializing into the same memory.  Thus, providing a
+   retransmission for any message type can save the need for a separate
+   application buffer.  This, however, requires an estimation about the
+   maximum expected header size to split the buffer and a memmove to
+   concatenate the two parts.
+
+2.4. Separate Responses
+
+
+   Separate responses are required for long-lasting resource handlers
+   that are too expensive to continuously update in the background to
+   instantly answer from a fresh cache.  If possible, those handlers
+   should be realized with split phase execution (e.g., enable a slow
+   sensor, return, and wait for a callback) to not fully block the
+   server during that time.  A convenient mechanism to store required
+   data such as the client address and to automatically send the empty
+   ACK could be provided by the implementation.  This avoids code
+   duplication when the server has multiple separate resource handlers.
+
+

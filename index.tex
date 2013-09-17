@@ -1,4 +1,5 @@
-\documentclass{llncs}
+\documentclass{sig-alternate-ipsn13}
+%\documentclass{llncs}
 
 \usepackage{verbatim}
 \usepackage{xspace}
@@ -16,18 +17,18 @@
 \usepackage{listings}
 %\usepackage{textcomp}
 \lstset{
-columns=fullflexible,
+%columns=fullflexible,
 %basicstyle=\ttfamily,
 escapeinside={||},
 mathescape=true,
     language=C, % choose the language of the code
-    basicstyle=\fontfamily{pcr}\selectfont\footnotesize\color{black},
+    basicstyle=\fontfamily{pcr}\selectfont\scriptsize\color{black},
     keywordstyle=\color{black}\bfseries, % style for keywords
     numbers=none, % where to put the line-numbers
     numberstyle=\tiny, % the size of the fonts that are used for the line-numbers
     backgroundcolor=\color{light},
-    %showspaces=false, % show spaces adding particular underscores
-    %showstringspaces=false, % underline spaces within strings
+    showspaces=false, % show spaces adding particular underscores
+    showstringspaces=false, % underline spaces within strings
     showtabs=false, % show tabs within strings adding particular underscores
     %frame=single, % adds a frame around the code
     tabsize=2, % sets default tabsize to 2 spaces
@@ -36,11 +37,11 @@ mathescape=true,
     breaklines=false, % sets automatic line breaking
     %breakatwhitespace=false,
     numbersep=2em,
-    emph={par,or,do,end,loop,await,emit,input,event,call,with,command,%
+    emph={par,or,hor,do,end,loop,await,emit,input,every,event,call,with,command,%
           var,and,then,else,C,return,pure,deterministic,nohold,finalize,%
-          class,spawn,ms,s,min,every},
+          each, abort, when, signal, FOREVER, class},
     emphstyle={\bfseries},
-    commentstyle=\color{dark},
+    commentstyle=\color{dark}\scriptsize,
     %xleftmargin=20pt,
     %xrightmargin=20pt,
     framesep=20pt,
@@ -86,8 +87,8 @@ is known to be hard and error prone.
 In this work we show how to extend a synchronous concurrent language to provide 
 safe and automatic management of dynamic memory.
 Our strategy reconciles data and control state into the single concept of 
-\emph{organisms}, which provide an object-like interface with multiple lines of 
-execution.
+\emph{organisms}, which provide multiple lines of execution with an object-like 
+interface.
 %
 Unlike objects in Java, organisms are lexically scoped, and their life cycle is 
 controlled following the structure of the program, rather than by runtime 
@@ -156,7 +157,7 @@ Contributions:
 efficiency/predictability.
 \end{itemize}
 
-\section{State of the Art}
+%\section{State of the Art}
 
 \begin{comment}
 As far as we know, the only XXX programming language targeting WSNs that 
@@ -167,7 +168,8 @@ all threads share a single stack~\cite{wsn.java}
 quais os problemas disso?
 \end{comment}
 
-\section{Memory Allocation Primitives}
+%\section{Memory Allocation Primitives}
+\section{Background}
 
 Regardless of whether memory is managed automatically or not, the underlying 
 system ultimately requires basic allocation and reclamation primitives such as 
@@ -181,29 +183,29 @@ For instance, many memory management hazards that are neglected in larger
 systems can, instead, be critical in embedded systems:
 
 \begin{enumerate}
-\item \textbf{Memory corruption}
+\item \textbf{Memory corruption:}
     Many embedded systems lack memory protection, and continuous allocations in 
     the heap may end up corrupting the stack (and vice versa).
 
-\item \textbf{Run-time overhead}
+\item \textbf{Run-time overhead:}
     Memory management requires extra run-time bookkeeping.
     Also, in the context of embedded systems, a predictable execution model can 
     be even more important than the fastest scheme on the average.
 
-\item \textbf{Metadata overhead}
+\item \textbf{Metadata overhead:}
     Metadata used by the memory manager can spend precious bytes (e.g. linked 
     lists of free blocks).
 
-\item \textbf{Memory fragmentation}
+\item \textbf{Memory fragmentation:}
     For constrained memory platforms, unusable holes between and inside 
     allocated blocks (external and internal fragmentation, respectively) can 
 waste a big percentage of available memory.
 
-\item \textbf{Unreproducible execution}
+\item \textbf{Unreproducible execution:}
     Successive executions of the same program may allocate memory in different 
     ways, possibly leading to different outcomes (e.g. an allocation fail).
 
-\item \textbf{Reclamation hazards}
+\item \textbf{Reclamation hazards:}
     Properly reclaiming memory is far from trivial.
     A missed reclamation leads to a memory leak that wastes memory, while 
     reclaiming a memory block still in use leads to a dangling pointer that 
@@ -222,18 +224,17 @@ Hence, higher-level systems built on top of flawed primitives would inherit the
 same weaknesses.
 
 A common alternative for embedded systems is to use \emph{memory pools} as the 
-primitive scheme to manage dynamic allocation.
+underlying scheme to manage dynamic allocation.
 A memory pool is a static buffer of \emph{N} predefined fixed-sized blocks of 
 memory that can be used by an application.
 %
 In the context of sensor networks, both TinyOS and Coniki operating systems 
-offer%
+offer and promote the use of memory pools%
 \footnote{
 TinyOS provides the \emph{Pool} component, while Contiki, the \emph{memb} 
 library.
 }
-and promote the use of memory pools because most threats raised above can be 
-alleviated:
+because most threats raised above can be alleviated:
 
 \begin{enumerate}
 \item
@@ -278,13 +279,13 @@ are dynamically allocated.
 In our system, we promote the use of memory pools as the underlying allocation 
 mechanism, but also support heap allocation if more flexibility is required.
 
-\section{Dynamic Abstractions in \CEU}
+\section{Dynamic Abstractions in C\'eu}
 
 - synchronous semantics
 - like Esterel, similar to Protothreads
 - differ from proto compositions, timers,events,locals,fins
 
-\subsection{\CEU Basics}
+\subsection{C\'eu Basics}
 
 \begin{comment}
 - deterministic and bounded execution
@@ -295,18 +296,38 @@ mechanism, but also support heap allocation if more flexibility is required.
 - internal events
 \end{comment}
 
-\CEU is a synchronous reactive language that supports multiple lines of 
-execution---known as \emph{trails}---that continuously react to external input 
-events broadcast by the environment.
-%
-By following the synchronous model, each trail reacts to (or ignores) an 
-occurring event with a \emph{run-to-completion} policy in the order they appear 
-in the code: the scheduler of \CEU is deterministic and non-preemptive.
-%
-Reactions to different events never overlap, and the compiler ensures that 
-programs do not contain unbounded loops, which could lead to unresponsiveness.
+\begin{figure}[t]
+\begin{lstlisting}[numbers=left,xleftmargin=3em]
+par do
+    loop do
+        await 250ms;
+        _LED_toggle(0);
+    end
+with
+    loop do
+        await 500ms;
+        _LED_toggle(1);
+    end
+with
+    loop do
+        await 1000ms;
+        _LED_toggle(2);
+    end
+end
+\end{lstlisting}
+\rule{8.6cm}{0.37pt}
+\caption{
+    An introductory example in \CEU that blinks three LEDs in parallel trails.
+    The LEDs blink every $250ms$, $500ms$, and $1000ms$, respectively.
+    \label{lst.blink}
+}
+\end{figure}
 
-The example in Figure~\ref{fig.blink} blinks three LEDs in parallel with 
+\CEU~\cite{ceu.sensys13} is a synchronous reactive language that supports 
+multiple lines of execution---known as \emph{trails}---that continuously react 
+to external input events broadcast by the environment.
+%
+The example in Figure~\ref{lst.blink} blinks three LEDs in parallel with 
 different frequencies.
 %
 Symbols defined externally in $C$%
@@ -314,54 +335,39 @@ Symbols defined externally in $C$%
 $C$ compiler for the target embedded platform.
 }, such as \code{LED\_toggle} in the example, can be used seamlessly in \CEU by 
 prefixing their names with an underscore.
-%
-Note that every 1s the three trails awake at the same time, but the 
-deterministic scheduler follows the order they appear in the code (i.e., first 
-\emph{LED 0} toggles, then \emph{LED 1}, and then \emph{LED 2}).
 
-\begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=2em]
-par do
-    every 250ms do
-        _LED_toggle(0);
-    end
-with
-    every 500ms do
-        _LED_toggle(1);
-    end
-with
-    every 1000ms do
-        _LED_toggle(2);
-    end
-end
-\end{lstlisting}
-\rule{12.2cm}{0.37pt}
-\caption{
-    The three LEDs blink every 250ms, 500ms, and 1000ms, respectively.
-    \label{lst.TODO}
-}
-\end{figure}
+By following the synchronous model, each trail in \CEU reacts to an occurring 
+event with a \emph{run-to-completion} policy and in the order they appear in 
+the code: the scheduler of \CEU is deterministic and non-preemptive.
+%
+Reactions to subsequent events never overlap, and the compiler ensures that 
+programs do not contain unbounded loops, which could lead to unresponsiveness.
+%
+Note in the example of Figure~\ref{lst.blink} that every second the three 
+trails awake at the same time, but the deterministic scheduler follows the 
+order they appear in the code (i.e., first \emph{LED 0} toggles, then \emph{LED 
+1}, and then \emph{LED 2}).
 
 Programs in \CEU are structured with standard imperative primitives, such as 
 sequences, loops, and assignments.
 The extra support for parallelism allows programs to wait for multiple events 
 at the same time.
 Trails await events without loosing context information, such as locals and the 
-program counter, what is a desired behavior in concurrent 
-applications.~\cite{sync_async.cooperative}
+program counter, which eases reasoning in concurrent 
+applications~\cite{sync_async.cooperative}.
 %
 The conjunction of parallelism with standard control-flow enable hierarchical 
 compositions, in which self-contained blocks of code can be deployed 
 independently.
 %
-To illustrate the expressiveness of compositions in \CEU, consider the two 
-variations of the structure that follows:
+To illustrate the power of compositions in \CEU, consider the two variations of 
+the structure that follows:
 
 \begin{minipage}[t]{0.35\linewidth}
 \begin{lstlisting}
 loop do
     par/and do
-        ...
+        <...>
     with
         await 1s;
     end
@@ -375,7 +381,7 @@ end
 \begin{lstlisting}
 loop do
     par/or do
-        ...
+        <...>
     with
         await 1s;
     end
@@ -397,6 +403,12 @@ The two structures represent, respectively, the \emph{sampling} and
 Note that the body of \textbf{\code{...}} may contain arbitrary code with 
 nested compositions and awaits, but the described patterns will work as 
 expected.
+
+
+%
+Together with the synchronous model, parallel compositions
+
+together with the synchronous execution model not only XXX, but are also
 
 As a more complete example, we propose to a simple packet forwarder from a set 
 of primitives depicted in Figure~\ref{fig.fwd.prims}.
@@ -426,31 +438,29 @@ of primitives depicted in Figure~\ref{fig.fwd.prims}.
 \end{lstlisting}
 
 \begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=2em]
+\begin{lstlisting}[numbers=left,xleftmargin=3em]
 loop do
-    await START;
-    par/or do
-        await STOP;
-    with
-        loop do
-            var _PKT_t* pkt = await RECEIVE;
-            loop do
-                _PKT_send(_PKT_next(pkt), pkt)
-                    finalize with
-                        _PKT_cancel(pkt);
-                    end;
-                var _PKT_t* sent;
-                var int ok;
-                (sent,ok) = await SENDDONE;
-                if sent==pkt and ok==1 then
-                    break;
-                end
+   await START;
+   par/or do
+      await STOP;
+   with
+      loop do
+         var _PKT_t* pkt = await RECEIVE;
+         loop do
+            _PKT_send(_PKT_next(pkt), pkt)
+               finalize with
+                  _PKT_cancel(pkt);
+               end;
+            var _PKT_t* sent = await SENDDONE;
+            if sent == pkt then
+               break;
             end
-        end
-    end
+         end
+      end
+   end
 end
 \end{lstlisting}
-\rule{12.2cm}{0.37pt}
+\rule{8.6cm}{0.37pt}
 \caption{ A simple packet forwarder in \CEU.\newline
 {\small %\textmd{
 TODO.
@@ -480,39 +490,28 @@ Protothreads
 Input events
 C operations
 
-\subsection{\CEU Organisms}
+\subsection{C\'eu Organisms}
 
 \begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=2em]
+\begin{lstlisting}[numbers=left,xleftmargin=3em]
 class Blink with
-    var int led;
-    var int dt;
+    var int led;    // LED identifier
+    var int dt;     // sleeping period
 do
-    every (dt)ms do
+    loop do
+        await (dt)ms;
         _LED_toggle(led);
     end
 end
 
 do
-    var Blink led0 with
-        this.led = 0;
-        this.dt  = 250;
-    end;
-
-    var Blink led1 with
-        this.led = 1;
-        this.dt  = 500;
-    end;
-
-    var Blink led2 with
-        this.led = 2;
-        this.dt  = 1000;
-    end;
-
+    var Blink led0(0,  250),
+              led1(1,  500),
+              led2(2, 1000);
     await FOREVER;
 end
 \end{lstlisting}
-\rule{12.2cm}{0.37pt}
+\rule{8.6cm}{0.37pt}
 \caption{ TODO.\newline
 {\small %\textmd{
 TODO.
@@ -522,7 +521,7 @@ TODO.
 \end{figure}
 
 \begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=2em]
+\begin{lstlisting}[numbers=left,xleftmargin=3em]
 class Forwarder with
     var _PKT_t pkt;
 do
@@ -552,7 +551,7 @@ loop do
     end
 end
 \end{lstlisting}
-\rule{12.2cm}{0.37pt}
+\rule{8.6cm}{0.37pt}
 \caption{ TODO.\newline
 {\small %\textmd{
 TODO.

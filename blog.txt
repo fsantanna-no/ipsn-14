@@ -1,0 +1,188 @@
+Language support for Memory Pools
+
+Automatic Objects in Céu
+
+// STATIC CREATION: LOCAL VARIABLE
+
+var T* pp;
+do
+    var T t;
+    pp = &t;            // requires finalize
+end
+
+- allocation:   fixed known offset known at compile time
+- start:        upon declaration
+- access:       direct (e.g. t.x=1, await t.e)
+- stop:         end of block, in ascending order
+- de-alloc:     end of block, just after stop
+-- arrays
+
+// DYNAMIC CREATION
+
+var T* pp;
+do
+    var T* p;
+    do
+        p  = new T;
+        pp = p;         // require finalize
+    end
+end
+
+
+SYNTAX
+local
+new
+spawn
+
+ALLOC
+static          local
+dynamic         new / spawn
+
+DALLOC
+block           local / new / spawn
+termination     spawn
+
+MEMORY
+known offset    loca            // (never fails)
+- unknown       new / spawn
+pool            class T(n)      // (never fails up to n)
+heap            class T         // (may fail)
+
+FINALIZE
+
+Dynamic Memory Management in Embedded Systems
+
+Even though dynamic functionality in embedded systems is discouraged due to 
+resource constraints, it is often inherently required in applications.
+
+As an example, protocols in sensor networks typically forward messages through 
+nodes with a non-deterministic rate, given that the number of neighbours and 
+transmission periods might not be predefined.
+Hence, protocols may require dynamic memory management to hold receiving 
+messages until they are successfully forwarded.
+
+A simple FIFO queue might not be always optimal because forwarding a message 
+may involve multiple steps with delays (e.g. transmission acknowledgments).
+In such scenario, the protocol could handle multiple messages at the same time 
+and a message received later may be discarded first.
+
+Unfortunately, out-of-the-box dynamic memory schemes, such as *malloc/free*, 
+are not suitable for embedded systems, in which the requirements can be quite 
+different in comparison to standard desktop systems.
+
+Follows a list of issues concerning memory management schemes in embedded 
+systems:
+
+1* Memory corruption.
+    Many embedded systems lack memory protection, and continuous allocations in 
+    the heap may end up corrupting the stack (and vice versa).
+
+2* Run-time overhead.
+    Memory management requires extra run-time bookkeeping.
+    Also, in the context of embedded systems, a predictable execution model can 
+    be even more important than the fastest scheme on the average.
+
+3* Meta-data overhead.
+    Meta-data used by the memory manager can also spend precious bytes (e.g.  
+    pointers to keep free lists).
+
+4* Memory fragmentation (internal and external).
+    For constrained memory platforms, unusable holes between and inside 
+    allocated blocks (external and internal fragmentation, respectively) can 
+waste a big percentage of available memory.
+
+5* Unreproducible execution.
+    Successive executions of the same program may allocate memory in different 
+    ways, possibly leading to different outcomes (e.g. an allocation fail).
+
+6* Deallocation hazards.
+    Properly deallocating memory is far from trivial.
+    Not deallocating a block leads to a *memory leak* that wastes memory, while 
+    deallocating a memory block still in use leads to *dangling pointers* that 
+will eventually crash the application.
+
+As the C standard is loose about these issues, note that *malloc/free* can 
+perform bad in all items.
+Furthermore, deallocation hazards is inherent to this scheme given that memory 
+must be explicitly freed.
+
+Garbage collected systems eliminate deallocation hazards, but may incur
+unacceptable run-time overheads.
+
+Embedded systems usually rely on memory pools for handling dynamic memory.
+In the context of sensor networks, both TinyOS and Coniki OSes offer and 
+promote the use of memory pools (through Pool and MEMB, respectively).
+
+A memory pool allocates *N* predefined fixed-sized blocks of memory that can be 
+used by the application.
+Most of the raised concerns are alleviated with this scheme:
+
+1* Because the allocation is static, the maximum amount of memory is known at 
+compile time, reducing considerably the risk of *memory corruption*.
+
+2* The run-time overhead is minimal, as implementations use simple arrays to 
+hold the memory blocks.
+For instance, in the TinyOS implementation both allocation and deallocation are 
+O(1).
+
+3* Contiki's MEMB has no metadata at the cost of a O(N) free operation.
+    TinyOS' Pool holds a free list in an auxiliary O(N) vector of pointers to 
+achieve O(1) free operation.
+
+4* Regardless of different allocation patterns in applications, memory pools 
+   will always guarantee the minimal N of memory blocks.
+   Hence, external fragmentation is null.
+   Internal fragmentation, however, can be an issue and is discussed below.
+
+5* Given that the operations are simple and the blocks of memory are of the 
+same size, the execution is always deterministic and predictable.
+
+6* Memory pools are still used through alloc/free operations.
+   Hence, all difficulties with properly deallocating memory are still XXX 
+here.
+
+Internal fragmentation occurs when allocating memory blocks that are bigger 
+than the requested size.
+In embedded systems, In memory pools
+a different memory pool for each kind of object.
+Typically, embedded applications are simple and contain one or two different 
+objetcs,
+This way, internal fragmentation is not a real issue in embedded systems.
+
+
+
+
+
+malloc/free
+by far
+
+isolation
+
+
+TinyOS/contiki over +30x codebase
+malloc -10x just a few uses of malloc
+
+
+Regarding the issues above, memory corruption
+
+minimum
+
+
+* low fragmentation
+* predictable run-time overhead
+* low memory overhead for metadata
+* predictable execution (alloc/free)
+* optimal space
+
+Fixed-size block memory pools do not need to store allocation metadata for each 
+allocation, describing characteristics like the size of the allocated block.  
+Particularly for small allocations, this provides substantial space savings
+
+Some references:
+
+http://en.wikipedia.org/wiki/Memory_pool
+http://www.tinyos.net/tinyos-2.x/doc/nesdoc/micaz/ihtml/tos.interfaces.Pool.html
+https://github.com/contiki-os/contiki/wiki/Memory-allocation
+
+http://tinyos-help.10906.n7.nabble.com/dynamic-memory-allocation-in-TinyOS-tt13089.html
+http://pubs.opengroup.org/onlinepubs/009695399/functions/malloc.html
