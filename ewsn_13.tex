@@ -1,0 +1,570 @@
+\documentclass{llncs}
+
+\usepackage{verbatim}
+\usepackage{xspace}
+\usepackage{caption}
+
+\usepackage{color}
+    \definecolor{light}{gray}{0.87}
+    \definecolor{dark}{gray}{0.30}
+    %\definecolor{light}{rgb}{.90,.90,.90}
+    \definecolor{darkgreen}{rgb}{0,.50,0}
+    \definecolor{darkblue}{rgb}{0,0,.50}
+    \definecolor{darkred}{rgb}{.50,0,0}
+    \definecolor{darkpur}{rgb}{.50,0,.50}
+
+\usepackage{listings}
+%\usepackage{textcomp}
+\lstset{
+columns=fullflexible,
+%basicstyle=\ttfamily,
+escapeinside={||},
+mathescape=true,
+    language=C, % choose the language of the code
+    basicstyle=\fontfamily{pcr}\selectfont\footnotesize\color{black},
+    keywordstyle=\color{black}\bfseries, % style for keywords
+    numbers=none, % where to put the line-numbers
+    numberstyle=\tiny, % the size of the fonts that are used for the line-numbers
+    backgroundcolor=\color{light},
+    %showspaces=false, % show spaces adding particular underscores
+    %showstringspaces=false, % underline spaces within strings
+    showtabs=false, % show tabs within strings adding particular underscores
+    %frame=single, % adds a frame around the code
+    tabsize=2, % sets default tabsize to 2 spaces
+    %rulesepcolor=\color{gray}
+    captionpos=t, % sets the caption-position to bottom
+    breaklines=false, % sets automatic line breaking
+    %breakatwhitespace=false,
+    numbersep=2em,
+    emph={par,or,do,end,loop,await,emit,input,event,call,with,command,%
+          var,and,then,else,C,return,pure,deterministic,nohold,finalize,%
+          class,spawn,ms,s,min,every},
+    emphstyle={\bfseries},
+    commentstyle=\color{dark},
+    %xleftmargin=20pt,
+    %xrightmargin=20pt,
+    framesep=20pt,
+    %upquote=true,
+    %aboveskip={1.5\baselineskip},
+}
+
+\newcommand{\CEU}{\textsc{C\'{e}u}\xspace}
+\newcommand{\code}[1] {{\small{\texttt{#1}}}}
+
+\begin{document}
+
+\title{Language Support for Dynamic Applications in Wireless Sensor Networks}
+
+\begin{comment}
+\author{
+John Smith and Mary Smith}
+\institute{University of North Texas\\
+           Computer Science Department\\
+           Denton, TX, 76203-1366\\
+           john@unt.edu, mary@cs.unt.edu}
+\end{comment}
+
+\maketitle
+
+\begin{abstract}
+
+Due to safety and resource constraints, programming languages for Wireless 
+Sensor Networks lack rich dynamic functionality such as heap-living objects and 
+garbage collection.
+%
+Nonetheless, to cope with the concurrent nature of WSNs, network protocols 
+commonly need to handle multiple incoming packets at the same time, thus 
+requiring dynamic allocation to hold data buffers.
+%
+Furthermore, handling a single packet may involve multiple steps, such as 
+reading from sensors and acknowledge transmissions, requiring additional 
+dynamic memory to hold control-flow information.
+%
+Currently, both data and control memory are managed manually, an approach that 
+is known to be hard and error prone.
+%
+In this work we show how to extend a synchronous concurrent language to provide 
+safe and automatic management of dynamic memory.
+Our strategy reconciles data and control state into the single concept of 
+\emph{organisms}, which provide an object-like interface with multiple lines of 
+execution.
+%
+Unlike objects in Java, organisms are lexically scoped, and their life cycle is 
+controlled following the structure of the program, rather than by runtime 
+reachability algorithms.
+%
+As a result, memory reclamation is efficient, providing rich dynamic 
+functionality as in Java, with little overhead in comparison to C-based 
+systems.
+
+\begin{comment}
+By default, references to organisms are not allowed to escape their scope, xxx 
+safety.
+
+can be optionally allocated on the stack, memory pool, or heap, depending on 
+the level of flexibility required in the program.
+In all cases, memory reclamation is made automatically following lexical scope, 
+thus avoiding... and more efficiently than garbage collectors.
+
+The data and control memory is then handled either by asynchronous 
+communication primitives (in event-driven systems) or by predefined number of 
+worker threads (in multi-threaded systems).
+
+Dynamic behavior in applications in Wireless Sensor Networks is a reality.
+Wireless Sensor Networks are
+\end{comment}
+
+\end{abstract}
+
+\section{Introduction}
+
+\begin{comment}
+this distinction between data and control data shows that both memory and 
+control need to be allocated dynamically.
+
+allocate code dynamically
+
+protothreads / ocram cannot dynamically allocate threads
+
+they should use statically allocated with loops
+
+probls: no composition (as they are global)
+        no reuse of memory (because they are alway active)
+
+Dynamic functionality in embedded systems is usually discouraged due to 
+resource constraints.
+However, some types of applications inherently require memory allocation.
+
+As an example, protocols in sensor networks typically forward messages through nodes at a non-deterministic rate, given that the number of neighbors and transmission periods can vary.
+Hence, many protocols require dynamic memory management to hold receiving messages until they are successfully forwarded.
+
+A simple FIFO queue might not be always optimal because forwarding a message may involve multiple steps with delays (e.g. transmission acknowledgments).
+In such scenario, the protocol would rather handle multiple messages at the same time, raising the possibility of a message received later be discarded first.
+\end{comment}
+
+Contributions:
+
+\begin{itemize}
+\item An abstraction mechanism that reconciles objects and threads in a single 
+        concept.
+
+\item Lexically scoped dynamic instances with efficient and automatic memory 
+        reclamation.
+
+\item Syntactic support for choosing between \emph{heap} and \emph{pool} 
+        allocation, accounting respectively for more flexibility or 
+efficiency/predictability.
+\end{itemize}
+
+\section{State of the Art}
+
+\begin{comment}
+As far as we know, the only XXX programming language targeting WSNs that 
+supports automatic memory management is Java~\cite{wsn.java} (through the 
+\emph{Djarelling}~\cite{wsn.djar} and \emph{Takatuka} VMs).
+
+all threads share a single stack~\cite{wsn.java}
+quais os problemas disso?
+\end{comment}
+
+\section{Memory Allocation Primitives}
+
+Regardless of whether memory is managed automatically or not, the underlying 
+system ultimately requires basic allocation and reclamation primitives such as 
+\emph{malloc} and \emph{free}.
+%
+Unfortunately, out-of-the-box \emph{malloc/free} is not suitable for embedded 
+systems, which have different requirements in comparison to standard desktop 
+systems.
+%
+For instance, many memory management hazards that are neglected in larger 
+systems can, instead, be critical in embedded systems:
+
+\begin{enumerate}
+\item \textbf{Memory corruption}
+    Many embedded systems lack memory protection, and continuous allocations in 
+    the heap may end up corrupting the stack (and vice versa).
+
+\item \textbf{Run-time overhead}
+    Memory management requires extra run-time bookkeeping.
+    Also, in the context of embedded systems, a predictable execution model can 
+    be even more important than the fastest scheme on the average.
+
+\item \textbf{Metadata overhead}
+    Metadata used by the memory manager can spend precious bytes (e.g. linked 
+    lists of free blocks).
+
+\item \textbf{Memory fragmentation}
+    For constrained memory platforms, unusable holes between and inside 
+    allocated blocks (external and internal fragmentation, respectively) can 
+waste a big percentage of available memory.
+
+\item \textbf{Unreproducible execution}
+    Successive executions of the same program may allocate memory in different 
+    ways, possibly leading to different outcomes (e.g. an allocation fail).
+
+\item \textbf{Reclamation hazards}
+    Properly reclaiming memory is far from trivial.
+    A missed reclamation leads to a memory leak that wastes memory, while 
+    reclaiming a memory block still in use leads to a dangling pointer that 
+will eventually crash the application.
+\end{enumerate}
+
+Note that reclamation hazards are inherent to systems that require an explicit 
+free operation, because its correct use is left to programmers.
+As an alternative, garbage collection eliminates reclamation hazards, but may 
+incur unacceptable run-time overheads.
+
+Note also that as the C standard is not specific about memory allocation 
+behavior, \emph{malloc/free} can perform bad in all enumerated issues.
+%
+Hence, higher-level systems built on top of flawed primitives would inherit the 
+same weaknesses.
+
+A common alternative for embedded systems is to use \emph{memory pools} as the 
+primitive scheme to manage dynamic allocation.
+A memory pool is a static buffer of \emph{N} predefined fixed-sized blocks of 
+memory that can be used by an application.
+%
+In the context of sensor networks, both TinyOS and Coniki operating systems 
+offer%
+\footnote{
+TinyOS provides the \emph{Pool} component, while Contiki, the \emph{memb} 
+library.
+}
+and promote the use of memory pools because most threats raised above can be 
+alleviated:
+
+\begin{enumerate}
+\item
+Given that the whole space for memory pools is static, dynamic allocations will 
+never corrupt the stack.
+For the same reason, the exact maximum stack limit can be known at compile 
+time, helping to evaluate the risks of its growth during runtime.
+
+\item
+The run-time overhead is minimal because implementations typically use simple 
+arrays to hold the memory blocks.
+For instance, both allocation and reclamation are \emph{O(1)} in TinyOS.
+
+\item
+As associated metadata, TinyOS and Contiki pools use a single auxiliary vector 
+of size \emph{N} to hold pointers for free blocks.
+
+\item
+Regardless of how allocation patterns in applications vary, memory pools will 
+always guarantee a minimal \emph{N} of memory blocks.
+Hence, external fragmentation is non-existent.
+Internal fragmentation, however, can be an issue and is discussed further.
+
+\item
+Given that memory operations are simple and only handle fixed-size blocks, the 
+execution is always deterministic and predictable.
+
+\item
+Memory pools are still manipulated through malloc/free-like operations.
+Hence, all challenges to properly reclaim memory still hold.
+\end{enumerate}
+
+Internal fragmentation occurs when an allocated memory block is bigger than the 
+requested size.
+Given that memory pools can only handle fixed-size blocks, any allocation that 
+requests smaller blocks will contain internal fragmentation (while allocation 
+of bigger blocks always fail).
+For applications that require blocks of different sizes, memory pools
+This is the case for most Java applications, in which all non-primitive types 
+are dynamically allocated.
+
+In our system, we promote the use of memory pools as the underlying allocation 
+mechanism, but also support heap allocation if more flexibility is required.
+
+\section{Dynamic Abstractions in \CEU}
+
+- synchronous semantics
+- like Esterel, similar to Protothreads
+- differ from proto compositions, timers,events,locals,fins
+
+\subsection{\CEU Basics}
+
+\begin{comment}
+- deterministic and bounded execution
+- shared memory concurrency
+- integration with C
+- locals and finalization
+- first-class timers
+- internal events
+\end{comment}
+
+\CEU is a synchronous reactive language that supports multiple lines of 
+execution---known as \emph{trails}---that continuously react to external input 
+events broadcast by the environment.
+%
+By following the synchronous model, each trail reacts to (or ignores) an 
+occurring event with a \emph{run-to-completion} policy in the order they appear 
+in the code: the scheduler of \CEU is deterministic and non-preemptive.
+%
+Reactions to different events never overlap, and the compiler ensures that 
+programs do not contain unbounded loops, which could lead to unresponsiveness.
+
+The example in Figure~\ref{fig.blink} blinks three LEDs in parallel with 
+different frequencies.
+%
+Symbols defined externally in $C$%
+\footnote{Symbols for functions, types, globals, and constants available in the 
+$C$ compiler for the target embedded platform.
+}, such as \code{LED\_toggle} in the example, can be used seamlessly in \CEU by 
+prefixing their names with an underscore.
+%
+Note that every 1s the three trails awake at the same time, but the 
+deterministic scheduler follows the order they appear in the code (i.e., first 
+\emph{LED 0} toggles, then \emph{LED 1}, and then \emph{LED 2}).
+
+\begin{figure}[h]
+\begin{lstlisting}[numbers=left,xleftmargin=2em]
+par do
+    every 250ms do
+        _LED_toggle(0);
+    end
+with
+    every 500ms do
+        _LED_toggle(1);
+    end
+with
+    every 1000ms do
+        _LED_toggle(2);
+    end
+end
+\end{lstlisting}
+\rule{12.2cm}{0.37pt}
+\caption{
+    The three LEDs blink every 250ms, 500ms, and 1000ms, respectively.
+    \label{lst.TODO}
+}
+\end{figure}
+
+Programs in \CEU are structured with standard imperative primitives, such as 
+sequences, loops, and assignments.
+The extra support for parallelism allows programs to wait for multiple events 
+at the same time.
+Trails await events without loosing context information, such as locals and the 
+program counter, what is a desired behavior in concurrent 
+applications.~\cite{sync_async.cooperative}
+%
+The conjunction of parallelism with standard control-flow enable hierarchical 
+compositions, in which self-contained blocks of code can be deployed 
+independently.
+%
+To illustrate the expressiveness of compositions in \CEU, consider the two 
+variations of the structure that follows:
+
+\begin{minipage}[t]{0.35\linewidth}
+\begin{lstlisting}
+loop do
+    par/and do
+        ...
+    with
+        await 1s;
+    end
+end
+\end{lstlisting}
+\end{minipage}
+%
+\hspace{1cm}
+%
+\begin{minipage}[t]{0.35\linewidth}
+\begin{lstlisting}
+loop do
+    par/or do
+        ...
+    with
+        await 1s;
+    end
+end
+\end{lstlisting}
+\end{minipage}
+
+In the \code{par/and} loop variation, the code in the first trail (represented 
+as \code{...}) is repeated every second at minimum, as the second trail must 
+also terminate to rejoin the \code{par/and} primitive and restart the loop.
+%
+In the \code{par/or} loop variation, if the code does not terminate within a 
+second, the second trail rejoins the composition (cancelling the first trail) 
+and restarts the loop.
+%
+The two structures represent, respectively, the \emph{sampling} and 
+\emph{timeout} patterns, which are common in embedded applications.
+%
+Note that the body of \textbf{\code{...}} may contain arbitrary code with 
+nested compositions and awaits, but the described patterns will work as 
+expected.
+
+As a more complete example, we propose to a simple packet forwarder from a set 
+of primitives depicted in Figure~\ref{fig.fwd.prims}.
+
+\begin{lstlisting}
+ == TYPES:
+    * PKT_t
+        the packet data type for the protocol
+
+ == FUNCTIONS:
+    * PKT_send
+        transmits a protocol packet
+    * PKT_cancel
+        cancels a packet transmition
+    * PKT_next
+        gets the next hop to forward
+
+ == EVENTS:
+    * START
+        a request to start the protocol
+    * STOP
+        a request to stop the protocol
+    * RECEIVE
+        an arriving protocol packet
+    * SENDDONE
+        a packet transmition acknowledgement
+\end{lstlisting}
+
+\begin{figure}[h]
+\begin{lstlisting}[numbers=left,xleftmargin=2em]
+loop do
+    await START;
+    par/or do
+        await STOP;
+    with
+        loop do
+            var _PKT_t* pkt = await RECEIVE;
+            loop do
+                _PKT_send(_PKT_next(pkt), pkt)
+                    finalize with
+                        _PKT_cancel(pkt);
+                    end;
+                var _PKT_t* sent;
+                var int ok;
+                (sent,ok) = await SENDDONE;
+                if sent==pkt and ok==1 then
+                    break;
+                end
+            end
+        end
+    end
+end
+\end{lstlisting}
+\rule{12.2cm}{0.37pt}
+\caption{ A simple packet forwarder in \CEU.\newline
+{\small %\textmd{
+TODO.
+}%}
+\label{lst.TODO}
+}
+\end{figure}
+
+- assumption, next always succeed
+
+\begin{itemize}
+\item sequential reasoning
+\item no state variables (as a consequence)
+\item locals (as a consequence)
+\item parallel compositions
+\item finalize safe (and enforced) termination
+\end{itemize}
+
+TinyOS
+- 4 callbacks
+
+Protothreads
+- state vars for start/stop
+
+\subsection{A Simple Packet Forwarder}
+
+Input events
+C operations
+
+\subsection{\CEU Organisms}
+
+\begin{figure}[h]
+\begin{lstlisting}[numbers=left,xleftmargin=2em]
+class Blink with
+    var int led;
+    var int dt;
+do
+    every (dt)ms do
+        _LED_toggle(led);
+    end
+end
+
+do
+    var Blink led0 with
+        this.led = 0;
+        this.dt  = 250;
+    end;
+
+    var Blink led1 with
+        this.led = 1;
+        this.dt  = 500;
+    end;
+
+    var Blink led2 with
+        this.led = 2;
+        this.dt  = 1000;
+    end;
+
+    await FOREVER;
+end
+\end{lstlisting}
+\rule{12.2cm}{0.37pt}
+\caption{ TODO.\newline
+{\small %\textmd{
+TODO.
+}%}
+\label{lst.TODO}
+}
+\end{figure}
+
+\begin{figure}[h]
+\begin{lstlisting}[numbers=left,xleftmargin=2em]
+class Forwarder with
+    var _PKT_t pkt;
+do
+    _PKT_send(_PKT_next(&pkt), &pkt)
+        finalize with
+            _PKT_cancel(&pkt);
+        end;
+    var _PKT_t* sent = await SENDDONE;
+    if sent == &pkt then
+        break;
+    end
+end
+
+loop do
+    await START;
+    par/or do
+        await STOP;
+    with
+        do
+            loop do
+                var _PKT_t* pkt = await RECEIVE;
+                spawn [10] Forwarder with
+                    this.pkt = *pkt;
+                end;
+            end
+        end
+    end
+end
+\end{lstlisting}
+\rule{12.2cm}{0.37pt}
+\caption{ TODO.\newline
+{\small %\textmd{
+TODO.
+}%}
+\label{lst.TODO}
+}
+\end{figure}
+
+\section{Evaluation}
+
+\section{Conclusion}
+
+\bibliographystyle{splncs}
+\bibliography{my,other}
+\end{document}
