@@ -6,7 +6,7 @@
 \usepackage{caption}
 
 \usepackage{color}
-    \definecolor{light}{gray}{0.87}
+    \definecolor{light}{gray}{0.92}
     \definecolor{dark}{gray}{0.30}
     %\definecolor{light}{rgb}{.90,.90,.90}
     \definecolor{darkgreen}{rgb}{0,.50,0}
@@ -39,7 +39,7 @@ mathescape=true,
     numbersep=2em,
     emph={par,or,hor,do,end,loop,await,emit,input,every,event,call,with,command,%
           var,and,then,else,C,return,pure,deterministic,nohold,finalize,%
-          each, abort, when, signal, FOREVER, class},
+          each, abort, when, signal, FOREVER, class, spawn},
     emphstyle={\bfseries},
     commentstyle=\color{dark}\scriptsize,
     %xleftmargin=20pt,
@@ -276,16 +276,68 @@ For applications that require blocks of different sizes, memory pools
 This is the case for most Java applications, in which all non-primitive types 
 are dynamically allocated.
 
+TODO:
 In our system, we promote the use of memory pools as the underlying allocation 
 mechanism, but also support heap allocation if more flexibility is required.
+%
+To deal with memory reclamation, we support
+- safe
+- efficient
+- high level
 
-\section{Dynamic Abstractions in C\'eu}
+\section{The Programming Language C\'eu}
 
-- synchronous semantics
-- like Esterel, similar to Protothreads
-- differ from proto compositions, timers,events,locals,fins
+% TODO:
+%- synchronous semantics
+%- like Esterel, similar to Protothreads
+%- differ from proto compositions, timers,events,locals,fins
 
-\subsection{C\'eu Basics}
+\begin{figure}[t]
+\begin{lstlisting}%[backgroundcolor=\color{white}]
+
+// DECLARATIONS
+input <type> <id>;      // external event
+event <type> <id>;      // internal event
+var   <type> <id>;      // variable
+
+// EVENT HANDLING
+await <id>;             // awaits event
+emit  <id>;             // emits  event
+
+// COMPOUND STATEMENTS
+do <...> end            // scope block
+<...> ; <...> ;         // sequence
+if <...> then <...>     // conditional
+         else <...> end
+loop do <...> end       // repetition
+    break               //   (escape loop)
+finalize <...>          // finalization
+    with <...> end
+
+// PARALLEL COMPOSITIONS
+par/and do <...>        // rejoins on both sides
+      with <...> end
+par/or do  <...>        // rejoins on any side
+      with <...> end
+par do <...>            // never rejoins
+  with <...> end
+
+// C INTEGRATION
+_f();                   // C call (prefix `_')
+native do <...> end     // block of native code
+pure <id>;              // "pure" annotation
+safe <id> with <id>;    // "safe" annotation
+\end{lstlisting}
+\rule{8.5cm}{0.37pt}
+\caption{ Syntax of \CEU.\newline
+{\small %\textmd{
+}%}
+\label{lst.syntax}
+}
+\end{figure}
+
+high-level compositions
+static safety guarantees
 
 \begin{comment}
 - deterministic and bounded execution
@@ -301,17 +353,17 @@ mechanism, but also support heap allocation if more flexibility is required.
 par do
     loop do
         await 250ms;
-        _LED_toggle(0);
+        _toggle(0);
     end
 with
     loop do
         await 500ms;
-        _LED_toggle(1);
+        _toggle(1);
     end
 with
     loop do
         await 1000ms;
-        _LED_toggle(2);
+        _toggle(2);
     end
 end
 \end{lstlisting}
@@ -333,20 +385,28 @@ different frequencies.
 Symbols defined externally in $C$%
 \footnote{Symbols for functions, types, globals, and constants available in the 
 $C$ compiler for the target embedded platform.
-}, such as \code{LED\_toggle} in the example, can be used seamlessly in \CEU by 
+}, such as \code{\_toggle} in the example, can be used seamlessly in \CEU by 
 prefixing their names with an underscore.
 
 By following the synchronous model, each trail in \CEU reacts to an occurring 
 event with a \emph{run-to-completion} policy and in the order they appear in 
-the code: the scheduler of \CEU is deterministic and non-preemptive.
+the code: the scheduler of \CEU is non-preemptive and deterministic.
 %
 Reactions to subsequent events never overlap, and the compiler ensures that 
-programs do not contain unbounded loops, which could lead to unresponsiveness.
+programs do not contain unbounded loops, which could lead to unresponsiveness 
+for incoming events.
 %
-Note in the example of Figure~\ref{lst.blink} that every second the three 
-trails awake at the same time, but the deterministic scheduler follows the 
-order they appear in the code (i.e., first \emph{LED 0} toggles, then \emph{LED 
-1}, and then \emph{LED 2}).
+The language runtime relies on a queue to hold incoming events while reactions 
+execute to completion.
+%
+The disciplined execution model of \CEU simplifies the automatic analysis about 
+concurrency aspects, enabling a number of static safety guarantees, such as 
+race-free shared-memory and $C$ calls~\cite{ceu.sensys13}.
+%
+%Note in the example of Figure~\ref{lst.blink} that every second the three 
+%trails awake at the same time, but the deterministic scheduler follows the 
+%order they appear in the code (i.e., first \emph{LED 0} toggles, then 
+%\emph{LED 1}, and then \emph{LED 2}).
 
 Programs in \CEU are structured with standard imperative primitives, such as 
 sequences, loops, and assignments.
@@ -400,18 +460,112 @@ and restarts the loop.
 The two structures represent, respectively, the \emph{sampling} and 
 \emph{timeout} patterns, which are common in embedded applications.
 %
-Note that the body of \textbf{\code{...}} may contain arbitrary code with 
+Note that the body of \textbf{\code{<...>}} may contain arbitrary code with 
 nested compositions and awaits, but the described patterns will work as 
 expected.
 
+\begin{figure}[t]
+\begin{lstlisting}[numbers=left,xleftmargin=3em]
+input void START, STOP;
+input _PKT_t* RECEIVE, SENDDONE;
+loop do
+    await START;
+    par/or do
+        await STOP;
+    with
+        loop do
+            var _PKT_t* pkt = await RECEIVE;
+            finalize
+                _PKT_send(_PKT_next(pkt), pkt);
+            with
+                _PKT_cancel(pkt);
+            end
+            await SENDDONE;
+        end
+    end
+end
+\end{lstlisting}
+\rule{8.6cm}{0.37pt}
+\caption{ A simple routing protocol in \CEU.%\newline
+{\small %\textmd{
+%TODO.
+}%}
+\label{lst.srp}
+}
+\end{figure}
 
+As a more complete example, Figure~\ref{lst.srp} implements a simple routing 
+protocol for WSNs.
 %
-Together with the synchronous model, parallel compositions
+The declared input events (lines 1-2) represent the external interface of the 
+protocol that commands its execution.
+The events \code{START}/\code{STOP} control if the protocol should be active or 
+not.
+The event \code{RECEIVE} notifies that a new packet should be routed through 
+the protocol, while the event \code{SENDDONE} acknowledges a successful packet 
+transmission (both events carry packet pointers).
+%
+The protocol enters the top-level loop and awaits the starting event (line
+4);
+upon request, the program spawns two other trails:
+one to await the stopping event (line 6),
+and another to actually route packets in a loop (lines 8-16).
+%
+Whenever a \code{STOP} occurs, the trail in line 6 awakes and terminates, also 
+terminating the whole \code{par/or} which aborts the routing loop and restarts 
+the top-level loop (waiting for the next request to start in line 4, again).
+%
+The routing loop successively awaits a new packet to arrive (line 9), requests 
+to forward it (line 11), and awaits it to be transmitted (line 14).
+%
+Because the call to \code{\_PKT\_send} passes the local pointer \code{pkt} to 
+the radio driver (which runs asynchronously with the protocol), the \CEU 
+compiler obligates to include the \code{finalize} clause to safely release the 
+pointer going out of scope (lines 10-14).
+Now, suppose the application is awaiting \code{SENDDONE}, while the radio is 
+transmitting the packet, and a \code{STOP} event occurs:
+the program awakes in line 6 and terminates the \code{par/or}, also aborting 
+the routing loop (lines 8-16).
+In this case, the local pointer \code{pkt} goes out of scope, but the 
+\code{finalize} properly requests the radio to cancel the packet transmission.
 
-together with the synchronous execution model not only XXX, but are also
+The implementation of Figure~\ref{lst.srp} relies on the high-level control 
+mechanisms of \CEU, such as nested parallel compositions, await statements, and
+finalization blocks, not requiring explicit global variables or top-level 
+threads for control purposes.
+%
+The code as whole is self contained and has a clear interface with the external 
+environment---it can be moved around or composable in bigger applications 
+without a single modification.
+%
+However, the current code can forward a single packet at a time.
+Note that while awaiting a \code{SENDDONE} acknowledge (line 15), the program 
+is not awaiting \code{RECEIVE} (line 9) and, therefore, will miss all packets 
+in the meantime.
+%
+In the lack of rich dynamic support, a possible solution is to add a queue or 
+memory pool and manipulate the data buffers and transmission control state of 
+each received packet explicitly.
+For instance, this approach is taken in the reference implementation of the 
+\emph{Source Routing Protocol} for TinyOS%
+\footnote{TinyOS repository: 
+\url{https://github.com/tinyos/tinyos-release/tree/tinyos-2_1_2/tos/lib/net/srp}}.
+%
+In Section~\ref{sec.TODO} we propose a solution that keeps the overall 
+structure of Figure~\ref{lst.srp}, but, for every new message that arrives, it 
+dynamically spawns a new instance of the sending code (lines 10-15) to run in 
+parallel with the receiving loop.
+This way, each message will be handled in separate, keeping the main receiving 
+loop always ready for new requests.
 
-As a more complete example, we propose to a simple packet forwarder from a set 
-of primitives depicted in Figure~\ref{fig.fwd.prims}.
+\begin{comment}
+
+The conjunction of parallel compositions with the synchronous execution model 
+provides precise information about the control flow of applications to the 
+compiler of \CEU, enabling a number of static guarantees with precise 
+information about the control flow of applications
+- safety: bounded mem/exec,
+- other features
 
 \begin{lstlisting}
  == TYPES:
@@ -436,38 +590,7 @@ of primitives depicted in Figure~\ref{fig.fwd.prims}.
     * SENDDONE
         a packet transmition acknowledgement
 \end{lstlisting}
-
-\begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=3em]
-loop do
-   await START;
-   par/or do
-      await STOP;
-   with
-      loop do
-         var _PKT_t* pkt = await RECEIVE;
-         loop do
-            _PKT_send(_PKT_next(pkt), pkt)
-               finalize with
-                  _PKT_cancel(pkt);
-               end;
-            var _PKT_t* sent = await SENDDONE;
-            if sent == pkt then
-               break;
-            end
-         end
-      end
-   end
-end
-\end{lstlisting}
-\rule{8.6cm}{0.37pt}
-\caption{ A simple packet forwarder in \CEU.\newline
-{\small %\textmd{
-TODO.
-}%}
-\label{lst.TODO}
-}
-\end{figure}
+\end{comment}
 
 - assumption, next always succeed
 
@@ -494,44 +617,20 @@ C operations
 
 \begin{figure}[h]
 \begin{lstlisting}[numbers=left,xleftmargin=3em]
-class Blink with
-    var int led;    // LED identifier
-    var int dt;     // sleeping period
-do
-    loop do
-        await (dt)ms;
-        _LED_toggle(led);
-    end
-end
-
-do
-    var Blink led0(0,  250),
-              led1(1,  500),
-              led2(2, 1000);
-    await FOREVER;
-end
-\end{lstlisting}
-\rule{8.6cm}{0.37pt}
-\caption{ TODO.\newline
-{\small %\textmd{
-TODO.
-}%}
-\label{lst.TODO}
-}
-\end{figure}
-
-\begin{figure}[h]
-\begin{lstlisting}[numbers=left,xleftmargin=3em]
 class Forwarder with
-    var _PKT_t pkt;
+    var _PKT_t* pkt;
 do
-    _PKT_send(_PKT_next(&pkt), &pkt)
-        finalize with
-            _PKT_cancel(&pkt);
-        end;
-    var _PKT_t* sent = await SENDDONE;
-    if sent == &pkt then
-        break;
+    var _PKT_t buf = *pkt;
+    loop do
+        finalize
+            _PKT_send(_PKT_next(&buf), &buf);
+        with
+            _PKT_cancel(&buf);
+        end
+        var _PKT_t* sent = await SENDDONE;
+        if sent == &buf then
+            break;
+        end
     end
 end
 
@@ -543,9 +642,7 @@ loop do
         do
             loop do
                 var _PKT_t* pkt = await RECEIVE;
-                spawn [10] Forwarder with
-                    this.pkt = *pkt;
-                end;
+                spawn [10] Forwarder(pkt);
             end
         end
     end
@@ -560,9 +657,246 @@ TODO.
 }
 \end{figure}
 
+\section{Dynamic Abstractions in C\'eu}
+
+Applications frequently require multiple instances of an abstraction to coexist 
+during runtime.
+As an example, the routing protocol of Figure~\ref{lst.srp} requires to handle 
+multiple data packets with the same behavior.
+%
+To avoid duplicating source code (and saving ROM), languages often provide 
+abstraction and/or code reentrancy mechanisms: the same code is shared among 
+instances, which only differ on their data and point of execution.
+%
+In traditional multi-threaded systems, code reentrancy is achieved with 
+function declarations that are executed with different stacks and instruction 
+pointers.
+In object oriented languages, a \emph{class} encapsulates methods and 
+properties, and can be instantiated as objects.
+
+In \CEU, we designed an hybrid approach, which combines threads and classes in 
+the so called \emph{organisms}.
+An organism class is composed of an \emph{interface} and a single \emph{body}.
+The interface exposes public variables and internal events that other organisms 
+(and the top-level body) can refer.
+The body of a class has access to all presented functionality provided by \CEU, 
+such as parallel compositions, $C$ calls, timers, etc.
+An organism is instantiated by declaring a variable of the desired class, and 
+its body is automatically spawned in parallel with the enclosing block.
+%A method can be simulated by exposing an internal event in the interface of 
+%the class and using the same technique of Figure~\ref{lst.func}.
+%
+Just like a normal local variable, the life cycle of an organism is determined 
+by the block it is declared.
+Not only the memory and the visibility of an organism are associated to a 
+scope, but also its executing body, i.e., when an organism goes out of scope, 
+its memory is reclaimed and its body is aborted.
+%
+The allocation and reclamation of organisms are statically calculated, with no 
+runtime overhead such as garbage collection.
+\CEU organisms tie together automatic thread and memory management in the same 
+and efficient mechanism.
+
+\begin{figure}[t]
+%\rule{8.5cm}{0.37pt}
+\begin{minipage}[t]{0.45\linewidth}
+\begin{lstlisting}
+class Blink with
+  var int led;
+  var int dt;
+do
+  loop do
+    await (dt) ms;
+    _toggle(led);
+  end
+end
+
+do
+  var Blink l0(0,  250),
+            l1(1,  500),
+            l2(2, 1000);
+  await 1min;
+end
+\end{lstlisting}
+\end{minipage}
+%
+\hspace{0.0cm}
+%
+\begin{minipage}[t]{0.45\linewidth}
+\begin{lstlisting}[numbers=left,xleftmargin=0em]
+do
+  var <Blink> l0, l1, l2;
+  par/or do
+    l0.led =    0;
+    l0.dt  =  250;
+    l1.led =    0;
+    l1.dt  =  500;
+    l2.led =    0;
+    l3.dt  = 1000;
+    await 1min;
+  with
+    loop do
+      await (l0.dt) ms;
+      _toggle(l0.led);
+    end
+    await FOREVER;
+  with
+    loop do
+      await (l1.dt) ms;
+      _toggle(l1.led);
+    end
+    await FOREVER;
+  with
+    loop do
+      await (l2.dt) ms;
+      _toggle(l2.led);
+    end
+    await FOREVER;
+  end
+end
+\end{lstlisting}
+\end{minipage}
+\rule{8.6cm}{0.37pt}
+\caption{ The blinking LEDs using organisms with equivalent expansion.\newline
+{\small %\textmd{
+We instantiate three \code{Blink} organisms to run in parallel with the scope 
+they are declared.
+}%}
+\label{lst.blink.orgs}
+}
+\end{figure}
+
+The first column of Figure~\ref{lst.blink.orgs} re-implements the blinking 
+example of Figure~\ref{lst.blink} to run for 1 minute.
+%
+The \code{Blink} class exposes the \code{led} and \code{dt} variables to be 
+configured by the application, which creates three instances with different 
+initializations.
+%
+After the initializations, the organisms bodies run in parallel with the 
+\code{do-end} block they are declared and their scope is limited by it (lines 
+10-16).
+%
+After 1 minute the block will go out of scope, reclaiming all memory associated 
+with the organisms and aborting their bodies.
+%
+The second column shows how the organisms bodies are expanded to run in a 
+\code{par/or} together with the enclosing block they are declared.
+The expansion is illustrative, i.e., the code is not duplicated.
+Note that in the expansion, the bodies of the organisms are followed by 
+\code{await~FOREVER}%
+\footnote{\code{FOREVER} is a reserved keyword in \CEU, and represents an 
+external input event that never occurs.}%
+, meaning that only the enclosing block can terminate the \code{par/or}.
+
+Figure~\ref{lst.srp} shows part of our port of the SRP routing 
+protocol~\cite{wsn.teps} to \CEU.
+The protocol specifies a fixed number of \emph{forwarders} responsible for 
+routing received messages to neighbours based on a static table.
+Given that a forwarder holds internal state (i.e. a message buffer and the 
+forwarding activity), we define a \code{Forwarder} class and create multiple 
+instances to serve requests.
+
+The first column of Figure~\ref{lst.srp} shows the receiving loop of the 
+protocol, which invokes \code{emit~go} when a message needs to be forwarded.
+The event is declared as global, so that \code{Forwarder} instances have access 
+to it.
+The forwarders are declared in a vector, creating \code{COUNT} different 
+instances.
+As the vector is local, all instances are automatically killed when the 
+protocol is stopped.
+(Note the use of the start/stop pattern of Figure~\ref{lst.radio} again.)
+
+The second column of Figure~\ref{lst.srp} shows the \code{Forwarder} class.
+Initially, all forwarders are in the same state, waiting for the global event 
+\code{go}.
+Once the receiving loop emits the event in the top-level body, the forwarders 
+awake in the order they were declared.
+The first forwarder atomically sets the \code{gotcha} variable, indicating that 
+the message will be handled and that other forwarders should ignore it:
+all other forwarders will await again for the next \code{go} emission.
+With this technique, we eliminated the need of an explicit queue.
+In the case that all forwarders become busy, the \code{go} emission will be 
+missed (with \code{gotcha=0}), acting just like a full queue.
+
+%begin{comment}
+Note that \CEU organisms are not global entities and do not use the heap for 
+memory.
+Instead, they are bounded to the scope they are declared, and all memory is 
+statically allocated, just like \CEU does for standard local variables.
+Also, when an organism goes out of scope, the same automatic bookkeeping of 
+\code{par/or} compositions holds, all internal trails are killed and 
+finalization blocks execute (if any).
+Hence, the ``garbage collection'' for both the memory and code in organisms is 
+efficient and static.
+Although \CEU does not support dynamic creation (which could lead do unbounded 
+memory), scoped organisms offer some degree of flexibility when compared to 
+systems providing global objects only~\cite{wsn.virgil,wsn.flowtalk}.
+%end{comment}
+
+% TODO: ND access
+
+\begin{figure}[t]
+%\rule{8.5cm}{0.37pt}
+\begin{minipage}[t]{0.45\linewidth}
+{\small
+\begin{verbatim}
+event _fwd_t go;
+loop do
+  await SRP_START;
+  par/or do
+    await SRP_STOP;
+  with
+    var Forwarder[COUNT] fwds;
+    <initialize fwds>
+    loop do
+      await SRP_RECEIVE;
+      <receive or forward>
+      if hops_left > 0 then
+        <prepare fwd>
+        emit go=&fwd;
+      end
+    end
+  end
+end
+\end{verbatim}
+}
+\end{minipage}
+%
+\hspace{0.0cm}
+%
+\begin{minipage}[t]{0.45\linewidth}
+%\fbox{
+{\small
+\begin{verbatim}
+class Forwarder with
+  <...>
+do
+  loop do
+    fwd = await global:go;
+    if fwd:gotcha then
+      continue;
+    end
+    fwd:gotcha = 1;
+    <send message>
+    <...>
+  end
+end
+\end{verbatim}
+%}
+}
+\end{minipage}
+\rule{8.5cm}{0.37pt}
+\caption{ SRP forwarders as organisms.
+\label{lst.srp.xxx}
+}
+\end{figure}
+
 \section{Evaluation}
 
 \section{Conclusion}
+
+\section{12 pages max}
 
 \bibliographystyle{splncs}
 \bibliography{my,other}
